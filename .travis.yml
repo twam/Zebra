@@ -1,0 +1,28 @@
+sudo: false
+
+language: python
+
+addons:
+  apt:
+    packages:
+      - libcups2-dev
+
+python:
+  - "3.3"
+  - "3.4"
+  - "3.5"
+
+install:
+  - pip install --upgrade pip
+  - pip install -r requirements.txt
+  - pip install coveralls
+  - pip install autopep8
+
+script:
+  # Run all unit tests
+  - coverage run --source=. --branch -m unittest discover
+  # Check for formatting corresponding to PEP8
+  - autopep8 -dr .
+
+after_success:
+  coveralls
