@@ -60,14 +60,21 @@ class Zebra:
 
             zpl = ZPL.ZPL(firmware='V45.11.7ZA')
             zpl.StartFormat()
+
+            zpl.LabelTop(10)
             zpl.ChangeInternationalFontEncoding('cp850')
             zpl.PrintWidth(900)
-            zpl.LabelHome(0, 0)
-            zpl.FieldOrigin(0, 0)
-            zpl.FieldTypeset(100, 200)
-            zpl.ScalableBitmappedFont("0", "N", 120, 100)
-            zpl.FieldData("Hello World!".encode('cp850'))
-            zpl.FieldSeparator()
+            zpl.printText(300, 100, 50, 50, "Hallo")
+            zpl.printText(300, 200, 100, 100, "Hallo")
+            zpl.printDataMatrixBarCode(
+                50, 50, 9, "a5d7ffa0-fa01-4f12-be44-834ac4df2dd0")
+
+            # Grid
+            for y in range(0, 301, 50):
+                zpl.printBox(0, y, 900, 1)
+            for x in range(0, 901, 50):
+                zpl.printBox(x, 0, 1, 300)
+
             zpl.EndFormat()
 
             if (self.args.dryRun):

@@ -9,6 +9,11 @@ class ZPL(list):
     CONTROL_COMMAND = '~'
     FORMAT_COMMAND = '^'
 
+    ORIENTATION_NORMAL = 'N'
+    ORIENTATION_ROTATED = 'R'
+    ORIENTATION_INVERTED = 'I'
+    ORIENTATION_BOTTOMUP = 'B'
+
     def __init__(self, firmware='unknown'):
         self.firmware = firmware
         self.delimiter = b','
@@ -92,6 +97,24 @@ class ZPL(list):
     def getAllBytes(self):
         return b"".join(self)
 
+    def printText(self, x, y, width, height, text, font="0", orientation=ORIENTATION_NORMAL, encoding='cp850'):
+        self.FieldOrigin(0, 0)
+        self.FieldTypeset(x, y)
+        self.ScalableBitmappedFont(font, orientation, height, width)
+        self.FieldData(text.encode(encoding))
+        self.FieldSeparator()
+
+    def printDataMatrixBarCode(self, x, y, height, data, orientation=ORIENTATION_NORMAL, quality=200, columns=0, rows=0):
+        self.FieldOrigin(x, y)
+        self.DataMatrixBarCode(orientation, height, quality, columns, rows)
+        self.FieldData(data.encode('cp850'))
+        self.FieldSeparator()
+
+    def printBox(self, x, y, width, height, thickness=1):
+        self.FieldOrigin(x, y)
+        self.GraphicBox(width, height, thickness)
+        self.FieldSeparator()
+
     def ScalableBitmappedFont(self, font, orientation, h, w):
         if (type(font) != str) or (type(orientation) != str) or (type(h) != int) or (type(w) != int):
             raise TypeError
@@ -104,8 +127,30 @@ class ZPL(list):
         if (w < 1) or (w > 32000):
             raise ValueError
 
-        self.append("%cA%s%s%c%u%c%u" % (self.caret, font,
-                                         orientation, self.delimiter, h, self.delimiter, w))
+        self.appendCommand(self.FORMAT_COMMAND, "A" + font, orientation, h, w)
+
+    def DataMatrixBarCode(self, orientation, height, quality, columns, rows, formatId=6, escapeCharacter='~', aspectRatio=1):
+        if (type(orientation) != str) or (type(height) != int) or (type(columns) != int) or (type(rows) != int) or (type(formatId) != int) or (type(escapeCharacter) != str) or (type(aspectRatio) != int):
+            raise TypeError
+        if not re.match(r'^[NRIB]$', orientation):
+            raise ValueError
+        if (formatId < 0) or (formatId > 6):
+            raise ValueError
+        if (aspectRatio < 1) or (aspectRatio > 2):
+            raise ValueError
+        if (quality not in [0, 50, 80, 100, 140, 200]):
+            raise ValueError
+        if ((columns > 0) and (columns < 9)) or (((quality > 0) and (quality < 140)) and (columns % 2 == 0)) or ((quality == 200) and (columns % 2 != 0)) or (columns > 49):
+            raise ValueError
+        if ((rows > 0) and (rows < 9)) or (rows > 49):
+            raise ValueError
+
+        if self.checkFirmwareRestrictions(["V60.15.5Z", "V53.16.5Z"]):
+            self.appendCommand(self.FORMAT_COMMAND, "BX", orientation, height,
+                               quality, columns, rows, formatId, escapeCharacter, aspectRatio)
+        else:
+            self.appendCommand(self.FORMAT_COMMAND, "BX", orientation,
+                               height, quality, columns, rows, formatId, escapeCharacter)
 
     def ChangeCaret(self, caret='^'):
         if (type(caret) != str):
@@ -201,7 +246,24 @@ class ZPL(list):
         self.appendCommand(self.FORMAT_COMMAND, "FD", data)
 
     def FieldSeparator(self):
-        self.append("^FS")
+        self.appendCommand(self.FORMAT_COMMAND, "FS")
+
+    def GraphicBox(self, w, h, thickness=1, color='B', rounding=0):
+        if (type(w) != int) or (type(h) != int) or (type(thickness) != int) or (type(color) != str) or (type(rounding) != int):
+            raise TypeError
+        if (thickness < 1) or (thickness > 32000):
+            raise ValueError
+        if (w < thickness) or (w > 32000):
+            raise ValueError
+        if (h < thickness) or (h > 32000):
+            raise ValueError
+        if not re.match(r'^[BW]$', color):
+            raise ValueError
+        if (rounding < 0) or (rounding > 8):
+            raise ValueError
+
+        self.appendCommand(self.FORMAT_COMMAND, "GB", w,
+                           h, thickness, color, rounding)
 
     def ConfigurationUpdate(self, configuration):
         if (type(configuration) != str):
@@ -220,6 +282,14 @@ class ZPL(list):
             raise ValueError
 
         self.appendCommand(self.FORMAT_COMMAND, "LH", x, y)
+
+    def LabelTop(self, x):
+        if (type(x) != int):
+            raise TypeError
+        if (x < -120) or (x > 120):
+            raise ValueError
+
+        self.appendCommand(self.FORMAT_COMMAND, "LT", x)
 
     def PrintWidth(self, labelWidth):
         if (type(labelWidth) != int):
