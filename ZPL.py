@@ -6,14 +6,51 @@ class ZPLFirmwareMismatch(Exception):
 
 
 class ZPL(list):
+    CONTROL_COMMAND = '~'
+    FORMAT_COMMAND = '^'
 
     def __init__(self, firmware='unknown'):
         self.firmware = firmware
+        self.delimiter = b','
+        self.tilde = b'~'
+        self.caret = b'^'
 
     def append(self, item, encoding='utf_8'):
         if type(item) == str:
             item = item.encode(encoding)
         super(ZPL, self).append(item)
+
+    def appendCommand(self, commandType, command, *args):
+        if (type(commandType) != str) or (type(command) != str):
+            raise TypeError
+        if (commandType != self.CONTROL_COMMAND) and (commandType != self.FORMAT_COMMAND):
+            raise ValueError
+
+        data = b''
+
+        if (commandType == self.CONTROL_COMMAND):
+            data = data + self.tilde
+        else:
+            data = data + self.caret
+
+        data = data + command.encode('ascii')
+
+        for i in range(0, len(args)):
+            arg = args[i]
+
+            if (type(arg) == str):
+                data = data + arg.encode('ascii')
+            elif (type(arg) == int):
+                data = data + str(arg).encode('ascii')
+            elif (type(arg) == bytes):
+                data = data + arg
+            else:
+                raise Exception("Not supported type")
+
+            if i < len(args) - 1:
+                data = data + self.delimiter
+
+        self.append(data)
 
     def splitFirmware(self, firmware):
         matches = re.search(
@@ -29,6 +66,8 @@ class ZPL(list):
         if restrictions == []:
             return True
 
+        # check all firmware restrictions. if at least one is matched, return
+        # true
         firmware_parts = self.splitFirmware(self.firmware)
         for restriction in restrictions:
             restriction_parts = self.splitFirmware(restriction)
@@ -53,9 +92,6 @@ class ZPL(list):
     def getAllBytes(self):
         return b"".join(self)
 
-    # def __str__(self):
-    #     return "^XA" + "".join(self) + "^XZ"
-
     def ScalableBitmappedFont(self, font, orientation, h, w):
         if (type(font) != str) or (type(orientation) != str) or (type(h) != int) or (type(w) != int):
             raise TypeError
@@ -68,7 +104,36 @@ class ZPL(list):
         if (w < 1) or (w > 32000):
             raise ValueError
 
-        self.append("^A%s%s,%u,%u" % (font, orientation, h, w))
+        self.append("%cA%s%s%c%u%c%u" % (self.caret, font,
+                                         orientation, self.delimiter, h, self.delimiter, w))
+
+    def ChangeCaret(self, caret='^'):
+        if (type(caret) != str):
+            raise TypeError
+        if (len(caret) > 1) or (caret.encode("ascii")[0] > 127):
+            raise ValueError
+
+        self.appendCommand(self.FORMAT_COMMAND, "CC", caret)
+        # update afterwards as otherwise self.caret would be already new caret
+        self.caret = caret.encode('ascii')
+
+    def ChangeDelimiter(self, delimiter=','):
+        if (type(delimiter) != str):
+            raise TypeError
+        if (len(delimiter) > 1) or (delimiter.encode("ascii")[0] > 127):
+            raise ValueError
+
+        self.delimiter = delimiter.encode('ascii')
+        self.appendCommand(self.FORMAT_COMMAND, "CD", delimiter)
+
+    def ChangeTilde(self, tilde='~'):
+        if (type(tilde) != str):
+            raise TypeError
+        if (len(tilde) > 1) or (tilde.encode("ascii")[0] > 127):
+            raise ValueError
+
+        self.tilde = tilde.encode('ascii')
+        self.appendCommand(self.FORMAT_COMMAND, "CT", tilde)
 
     def ChangeInternationalFontEncoding(self, encoding):
         ENCODINGS = [
@@ -95,7 +160,7 @@ class ZPL(list):
                 else:
                     raise ZPLFirmwareMismatch
 
-        self.append("^CI%u" % characterSet)
+        self.appendCommand(self.FORMAT_COMMAND, "CI", characterSet)
 
     def FieldOrigin(self, x=0, y=0, z=0):
         if (type(x) != int) or (type(y) != int) or (type(z) != int):
@@ -108,9 +173,9 @@ class ZPL(list):
             raise ValueError
 
         if self.checkFirmwareRestrictions(["V60.14.x", "V50.14.x"]):
-            self.append("^FO%u,%u,%u" % (x, y, z))
+            self.appendCommand(self.FORMAT_COMMAND, "FO", x, y, z)
         else:
-            self.append("^FO%u,%u" % (x, y))
+            self.appendCommand(self.FORMAT_COMMAND, "FO", x, y)
 
     def FieldTypeset(self, x=0, y=0, z=0):
         if (type(x) != int) or (type(y) != int) or (type(z) != int):
@@ -123,9 +188,9 @@ class ZPL(list):
             raise ValueError
 
         if self.checkFirmwareRestrictions(["V60.14.x", "V50.14.x"]):
-            self.append("^FT%u,%u,%u" % (x, y, z))
+            self.appendCommand(self.FORMAT_COMMAND, "FT", x, y, z)
         else:
-            self.append("^FT%u,%u" % (x, y))
+            self.appendCommand(self.FORMAT_COMMAND, "FT", x, y)
 
     def FieldData(self, data):
         if (type(data) != str) and (type(data) != bytes):
@@ -133,13 +198,18 @@ class ZPL(list):
         if len(data) > 3072:
             raise ValueError
 
-        if type(data) == str:
-            self.append("^FD" + data)
-        else:
-            self.append(b"^FD" + data)
+        self.appendCommand(self.FORMAT_COMMAND, "FD", data)
 
     def FieldSeparator(self):
         self.append("^FS")
+
+    def ConfigurationUpdate(self, configuration):
+        if (type(configuration) != str):
+            raise TypeError
+        if not re.match(r'^[FNRS]$', configuration):
+            raise ValueError
+
+        self.appendCommand(self.FORMAT_COMMAND, "JU", configuration)
 
     def LabelHome(self, x=0, y=0):
         if (type(x) != int) or (type(y) != int):
@@ -148,7 +218,8 @@ class ZPL(list):
             raise ValueError
         if (y < 0) or (y > 32000):
             raise ValueError
-        self.append("^LH%u,%u" % (x, y))
+
+        self.appendCommand(self.FORMAT_COMMAND, "LH", x, y)
 
     def PrintWidth(self, labelWidth):
         if (type(labelWidth) != int):
@@ -156,15 +227,16 @@ class ZPL(list):
         if (labelWidth < 2):
             raise ValueError
 
-        self.append("^PW%u" % labelWidth)
+        self.appendCommand(self.FORMAT_COMMAND, "PW", labelWidth)
 
     def MediaType(self, mediaType):
         if (mediaType != "T") and (mediaType != "D"):
             raise ValueError
-        self.append("^MT%s" % (mediaType))
+
+        self.appendCommand(self.FORMAT_COMMAND, "MT", mediaType)
 
     def StartFormat(self):
-        self.append("^XA")
+        self.appendCommand(self.FORMAT_COMMAND, "XA")
 
     def EndFormat(self):
-        self.append("^XZ")
+        self.appendCommand(self.FORMAT_COMMAND, "XZ")

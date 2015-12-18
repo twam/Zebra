@@ -41,10 +41,60 @@ class ZPLTests(unittest.TestCase):
         zpl = ZPL.ZPL(firmware="V45.11.7ZA")
         self.assertTrue(zpl.checkFirmwareRestrictions(["V60.14.x", "Vx.10.x"]))
 
+    def testGetAllBytes(self):
+        zpl = ZPL.ZPL(firmware="V45.11.7ZA")
+        zpl.append("A")
+        zpl.append("B")
+        zpl.append("C")
+        self.assertEqual(zpl.getAllBytes(), b'ABC')
+
+    def testAppendCommandInvalidCommandTypeType(self):
+        zpl = ZPL.ZPL(firmware="V45.11.7ZA")
+        with self.assertRaises(TypeError):
+            zpl.appendCommand(1, 'FO')
+
+    def testAppendCommandInvalidCommandTypeValue(self):
+        zpl = ZPL.ZPL(firmware="V45.11.7ZA")
+        with self.assertRaises(ValueError):
+            zpl.appendCommand('x', 'FO')
+
+    def testAppendCommandInvalidCommandType(self):
+        zpl = ZPL.ZPL(firmware="V45.11.7ZA")
+        with self.assertRaises(TypeError):
+            zpl.appendCommand(zpl.FORMAT_COMMAND, 2)
+
+    def testAppendCommandFormatCommand(self):
+        zpl = ZPL.ZPL(firmware="V45.11.7ZA")
+        zpl.appendCommand(zpl.FORMAT_COMMAND, "A0", "N", 10, 20)
+        self.assertEqual(zpl, [b'^A0N,10,20'])
+
+    def testAppendCommandFormatCommandWithCC(self):
+        zpl = ZPL.ZPL(firmware="V45.11.7ZA")
+        zpl.ChangeCaret('x')
+        zpl.appendCommand(zpl.FORMAT_COMMAND, "A0", "N", 10, 20)
+        self.assertEqual(zpl, [b'^CCx', b'xA0N,10,20'])
+
+    def testAppendCommandFormatCommandWithCD(self):
+        zpl = ZPL.ZPL(firmware="V45.11.7ZA")
+        zpl.ChangeDelimiter(';')
+        zpl.appendCommand(zpl.FORMAT_COMMAND, "A0", "N", 10, 20)
+        self.assertEqual(zpl, [b'^CD;', b'^A0N;10;20'])
+
+    def testAppendCommandControlCommand(self):
+        zpl = ZPL.ZPL(firmware="V45.11.7ZA")
+        zpl.appendCommand(zpl.CONTROL_COMMAND, "A0", "N", 10, 20)
+        self.assertEqual(zpl, [b'~A0N,10,20'])
+
+    def testAppendCommandControlCommandWithCT(self):
+        zpl = ZPL.ZPL(firmware="V45.11.7ZA")
+        zpl.ChangeTilde('x')
+        zpl.appendCommand(zpl.CONTROL_COMMAND, "A0", "N", 10, 20)
+        self.assertEqual(zpl, [b'^CTx', b'xA0N,10,20'])
+
     def testChangeInternationalFontEncodingOK(self):
         zpl = ZPL.ZPL(firmware="V45.11.7ZA")
         zpl.ChangeInternationalFontEncoding('cp850')
-        self.assertEqual(zpl, [b'^CI13'])
+        self.assertEqual(zpl, [zpl.caret + b'CI13'])
 
     def testChangeInternationalFontEncodingFirmwareMismatch(self):
         zpl = ZPL.ZPL(firmware="V45.11.7ZA")
@@ -70,3 +120,16 @@ class ZPLTests(unittest.TestCase):
         zpl = ZPL.ZPL(firmware="V45.11.7ZA")
         zpl.EndFormat()
         self.assertEqual(zpl, [b'^XZ'])
+
+    def testChangeCaret(self):
+        zpl = ZPL.ZPL(firmware="V45.11.7ZA")
+        zpl.StartFormat()
+        zpl.ChangeCaret('x')
+        zpl.EndFormat()
+        self.assertEqual(zpl.getAllBytes(), b'^XA^CCxxXZ')
+
+    def testChangeDelimeter(self):
+        zpl = ZPL.ZPL(firmware="V45.11.7ZA")
+        zpl.ChangeDelimiter(';')
+        zpl.FieldOrigin(1, 2)
+        self.assertEqual(zpl.getAllBytes(), b'^CD;^FO1;2')
