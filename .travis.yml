@@ -20,9 +20,9 @@ install:
 
 script:
   # Run all unit tests
-  - coverage run --source=. --branch -m unittest discover
+  - coverage run -m unittest discover
   # Check for formatting corresponding to PEP8
-  - autopep8 -dr .
+  - autopep=$(autopep8 -dr .); [[ -z $autopep ]];
 
 after_success:
   coveralls
