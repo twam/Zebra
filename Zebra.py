@@ -7,7 +7,7 @@ import inspect
 import re
 import cups
 import traceback
-import ZPL
+import zpl2
 
 
 class Zebra:
@@ -58,7 +58,7 @@ class Zebra:
         try:
             self.parseArguments()
 
-            zpl = ZPL.ZPL(firmware='V45.11.7ZA')
+            zpl = zpl2.Zpl2(firmware='V45.11.7ZA')
             zpl.StartFormat()
 
             zpl.LabelTop(10)
