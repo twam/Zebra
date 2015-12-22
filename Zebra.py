@@ -113,6 +113,11 @@ class Zebra:
                             metavar='type',
                             required=True)
 
+        parser.add_argument('--grid',
+                            help='show grid with spacing',
+                            dest='gridSpacing',
+                            metavar='spacing')
+
         self.args = parser.parse_args(self.argv[1:])
 
     def parseUnit(self, val):
@@ -161,8 +166,6 @@ class Zebra:
         offsetY = textPosYFirst
         line = 0
         for item in self.args.data:
-            print(item)
-
             self.zpl.printText(
                 x=textPosX,
                 y=offsetY,
@@ -216,6 +219,51 @@ class Zebra:
 
             self.zpl.FieldSeparator()
 
+    def labelTypeImage(self):
+        with wand.image.Image(filename=self.args.data[0], resolution=self.args.dpi) as img:
+            img.background_color = wand.color.Color("white")
+            img.alpha_channel = 'remove'
+
+            newWidth = min(img.width, self.args.labelWidth)
+            newHeight = min(img.height, self.args.labelHeight)
+            left = int((img.width - newWidth) / 2)
+            top = int((img.height - newHeight) / 2)
+
+            img.crop(
+                top=top,
+                left=left,
+                width=newWidth,
+                height=newHeight)
+
+            offsetX = int((self.args.labelWidth - img.width) / 2)
+            offsetY = int((self.args.labelHeight - img.height) / 2)
+
+            bytesPerRow = math.ceil(img.width / 8)
+            binaryByteCount = bytesPerRow * img.height
+            graphicFieldCount = binaryByteCount
+
+            self.zpl.FieldOrigin(offsetX, offsetY)
+
+            if (self.args.debug):
+                img.save(filename='test.png')
+
+            rawImg = bytearray(img.make_blob(format='MONO'))
+            for i in range(0, len(rawImg)):
+                temp = 0
+                for j in range(0, 8):
+                    if (rawImg[i] & (1 << j)):
+                        temp |= (1 << (7 - j))
+                rawImg[i] = temp
+
+            self.zpl.GraphicField(compressionType='A',
+                                  binaryByteCount=binaryByteCount,
+                                  graphicFieldCount=graphicFieldCount,
+                                  bytesPerRow=bytesPerRow,
+                                  data=rawImg,
+                                  optimizeAscii=True)
+
+            self.zpl.FieldSeparator()
+
     def run(self):
         try:
             self.parseArguments()
@@ -237,10 +285,14 @@ class Zebra:
                 self.labelTypeText()
             elif (self.args.type == 'dhl'):
                 self.labelTypeDHL()
+            elif (self.args.type == 'image'):
+                self.labelTypeImage()
+            else:
+                return
 
             # Grid
-            if (self.args.debug):
-                self.addGrid()
+            if (self.args.gridSpacing):
+                self.addGrid(spacing=int(self.args.gridSpacing))
 
             self.zpl.EndFormat()
 
