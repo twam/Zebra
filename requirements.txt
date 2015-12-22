@@ -1,2 +1,3 @@
 pycups
-pyzpl2
+-e git://github.com/twam/pyzpl2.git#egg=pyzpl2
+

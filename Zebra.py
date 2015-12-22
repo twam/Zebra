@@ -22,7 +22,7 @@ class Zebra:
             inspect.getfile(inspect.currentframe())))
 
     def cupsPrint(self, data):
-        if type(data) != bytes:
+        if not isinstance(data, bytes):
             raise TypeError
         conn = cups.Connection()
         job = conn.createJob(printer=self.args.printer,
@@ -37,20 +37,38 @@ class Zebra:
         parser = argparse.ArgumentParser(
             description='Zebra', prog=self.progname, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-        parser.add_argument("-v", "--version", action="version",
-                            help="show the version and exit", version="0.1")
+        parser.add_argument("-v", "--version",
+                            action="version",
+                            help="show the version and exit",
+                            version="0.1")
 
-        parser.add_argument('-P', '--printer', help='specify CUPS printer name',
-                            dest='printer', default='zebra', metavar='printer')
+        parser.add_argument('-P', '--printer',
+                            help='specify CUPS printer name',
+                            dest='printer',
+                            default='zebra',
+                            metavar='printer')
 
-        parser.add_argument('-q', '--quantity', help='print quantity',
-                            dest='quantity', default=1, type=int, metavar='quantity')
+        parser.add_argument('-q', '--quantity',
+                            help='print quantity',
+                            dest='quantity',
+                            default=1,
+                            type=int,
+                            metavar='quantity')
 
-        parser.add_argument('--debug', help='print debug information',
-                            dest='debug', action='store_true')
+        parser.add_argument('--debug',
+                            help='print debug information',
+                            dest='debug',
+                            action='store_true')
 
-        parser.add_argument(
-            '--dry-run', help='do not print label, but show raw bytes instead', dest='dryRun', action='store_true')
+        parser.add_argument('data',
+                            help='data to print',
+                            nargs='+',
+                            metavar='data')
+
+        parser.add_argument('--dry-run',
+                            help='do not print label, but show raw bytes instead',
+                            dest='dryRun',
+                            action='store_true')
 
         self.args = parser.parse_args(self.argv[1:])
 
@@ -58,29 +76,61 @@ class Zebra:
         try:
             self.parseArguments()
 
-            zpl = zpl2.Zpl2(firmware='V45.11.7ZA')
-            zpl.StartFormat()
+            self.zpl = zpl2.Zpl2(firmware='V45.11.7ZA')
 
-            zpl.LabelTop(10)
-            zpl.ChangeInternationalFontEncoding('cp850')
-            zpl.PrintWidth(900)
-            zpl.printText(300, 100, 50, 50, "Hallo")
-            zpl.printText(300, 200, 100, 100, "Hallo")
-            zpl.printDataMatrixBarCode(
-                50, 50, 9, "a5d7ffa0-fa01-4f12-be44-834ac4df2dd0")
+            # label data
+            labelWidth = 900
+            labelHeight = 300
+
+            # font dimensions
+            sizeLarge = 80
+            sizeSmall = 50
+
+            # text positions
+            fieldSpacing = 5
+            textPosX = 0
+            textHeightTotal = sizeLarge + \
+                (len(self.args.data) - 1) * (sizeSmall + fieldSpacing)
+            textPosYFirst = int((labelHeight - textHeightTotal) / 2)
+
+            offsetY = textPosYFirst
+
+            self.zpl.StartFormat()
+            self.zpl.LabelTop(10)
+            self.zpl.ChangeInternationalFontEncoding('cp850')
+            self.zpl.PrintWidth(labelWidth)
+
+            line = 0
+            for item in self.args.data:
+                print(item)
+
+                self.zpl.printText(
+                    x=textPosX,
+                    y=offsetY,
+                    width=labelWidth,
+                    fontWidth=sizeLarge if line == 0 else sizeSmall,
+                    fontHeight=sizeLarge if line == 0 else sizeSmall,
+                    text=item,
+                    textJustification='C')
+                offsetY += (sizeLarge if line ==
+                            0 else sizeSmall) + fieldSpacing
+                line += 1
 
             # Grid
-            for y in range(0, 301, 50):
-                zpl.printBox(0, y, 900, 1)
-            for x in range(0, 901, 50):
-                zpl.printBox(x, 0, 1, 300)
+            if (self.args.debug):
+                for y in range(0, 301, 50):
+                    self.zpl.printBox(0, y, 900, 1)
+                for x in range(0, 901, 50):
+                    self.zpl.printBox(x, 0, 1, 300)
 
-            zpl.EndFormat()
+            self.zpl.EndFormat()
 
             if (self.args.dryRun):
-                print(zpl.getAllBytes())
+                print(self.zpl.getAllBytes())
             else:
-                self.cupsPrint(zpl.getAllBytes())
+                singleData = self.zpl.getAllBytes()
+                allData = b"".join([singleData * self.args.quantity])
+                self.cupsPrint(allData)
 
         except Exception as e:
             if (self.args.debug):
